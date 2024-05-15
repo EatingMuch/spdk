@@ -151,7 +151,9 @@
 	spdk_nvme_ns_cmd_write;
 	spdk_nvme_ns_cmd_writev;
 	spdk_nvme_ns_cmd_writev_with_md;
+	spdk_nvme_ns_cmd_writev_with_md_with_directive;
 	spdk_nvme_ns_cmd_write_with_md;
+	spdk_nvme_ns_cmd_write_with_md_with_directive;
 	spdk_nvme_ns_cmd_write_zeroes;
 	spdk_nvme_ns_cmd_write_uncorrectable;
 	spdk_nvme_ns_cmd_read;

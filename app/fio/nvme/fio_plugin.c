@@ -134,6 +134,7 @@ struct spdk_fio_thread {
 	unsigned int			iocq_count;	/* number of iocq entries filled by last getevents */
 	unsigned int			iocq_size;	/* number of iocq entries allocated */
 	struct fio_file			*current_f;	/* fio_file given by user */
+	uint16_t			directive_id;
 
 };
 
@@ -586,8 +587,8 @@ spdk_fio_setup(struct thread_data *td)
 		opts.shm_id = fio_options->shm_id;
 		g_spdk_enable_sgl = fio_options->enable_sgl;
 		g_spdk_sge_size = fio_options->sge_size;
-		g_spdk_bit_bucket_data_len = fio_options->bit_bucket_data_len;
 		parse_pract_flag(fio_options->pi_act);
+		g_spdk_bit_bucket_data_len = fio_options->bit_bucket_data_len;
 		g_spdk_md_per_io_size = spdk_max(fio_options->md_per_io_size, 4096);
 		g_spdk_apptag = (uint16_t)fio_options->apptag;
 		g_spdk_apptag_mask = (uint16_t)fio_options->apptag_mask;
@@ -677,6 +678,7 @@ spdk_fio_setup(struct thread_data *td)
 		}
 
 		fio_thread->current_f = f;
+		fio_thread->directive_id = trid.directive_id;
 
 		pthread_mutex_lock(&g_mutex);
 		fio_ctrlr = get_fio_ctrlr(&trid);
@@ -1060,8 +1062,10 @@ spdk_fio_queue(struct thread_data *td, struct io_u *io_u)
 	uint32_t		block_size;
 	uint64_t		lba;
 	uint32_t		lba_count;
-
+	struct spdk_fio_ctrlr* ctrlr = NULL;
+	uint16_t directive_id = 0;
 	fio_qpair = get_fio_qpair(fio_thread, io_u->file);
+	ctrlr = fio_qpair->fio_ctrlr;
 	if (fio_qpair == NULL) {
 		return -ENXIO;
 	}
@@ -1112,12 +1116,15 @@ spdk_fio_queue(struct thread_data *td, struct io_u *io_u)
 		}
 		break;
 	case DDIR_WRITE:
+		if (fio_thread != NULL) {
+			directive_id = fio_thread->directive_id;	
+		}
 		if (!g_spdk_enable_sgl) {
 			if (!fio_qpair->zone_append_enabled) {
-				rc = spdk_nvme_ns_cmd_write_with_md(ns, fio_qpair->qpair, io_u->buf, md_buf, lba,
+                rc = spdk_nvme_ns_cmd_write_with_md_with_directive(ns, fio_qpair->qpair, io_u->buf, md_buf, lba,
 								    lba_count,
 								    spdk_fio_completion_cb, fio_req,
-								    fio_qpair->io_flags, dif_ctx->apptag_mask, dif_ctx->app_tag);
+								    fio_qpair->io_flags, dif_ctx->apptag_mask, dif_ctx->app_tag, directive_id);
 			} else {
 				uint64_t zslba = fio_offset_to_zslba(io_u->offset, ns);
 				rc = spdk_nvme_zns_zone_append_with_md(ns, fio_qpair->qpair, io_u->buf, md_buf, zslba,
@@ -1141,10 +1148,15 @@ spdk_fio_queue(struct thread_data *td, struct io_u *io_u)
 					break;
 				}
 #endif
-				rc = spdk_nvme_ns_cmd_writev_with_md(ns, fio_qpair->qpair, lba,
+				// normal path
+				/*rc = spdk_nvme_ns_cmd_writev_with_md(ns, fio_qpair->qpair, lba,
 								     lba_count, spdk_fio_completion_cb, fio_req, fio_qpair->io_flags,
 								     spdk_nvme_io_reset_sgl, spdk_nvme_io_next_sge, md_buf,
-								     dif_ctx->apptag_mask, dif_ctx->app_tag);
+								     dif_ctx->apptag_mask, dif_ctx->app_tag);*/
+				rc = spdk_nvme_ns_cmd_writev_with_md_with_directive(ns, fio_qpair->qpair, lba,
+								     lba_count, spdk_fio_completion_cb, fio_req, fio_qpair->io_flags,
+								     spdk_nvme_io_reset_sgl, spdk_nvme_io_next_sge, md_buf,
+								     dif_ctx->apptag_mask, dif_ctx->app_tag, directive_id);
 			} else {
 				uint64_t zslba = fio_offset_to_zslba(io_u->offset, ns);
 				rc = spdk_nvme_zns_zone_appendv_with_md(ns, fio_qpair->qpair, zslba,
