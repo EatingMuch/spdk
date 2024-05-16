@@ -986,6 +986,34 @@ spdk_nvme_ns_cmd_write_with_md(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *
 	}
 }
 
+int spdk_nvme_ns_cmd_write_with_md_with_directive(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
+			       void *buffer, void *metadata, uint64_t lba,
+			       uint32_t lba_count, spdk_nvme_cmd_cb cb_fn, void *cb_arg,
+			       uint32_t io_flags, uint16_t apptag_mask, uint16_t apptag, uint16_t directive)
+{
+	struct nvme_request *req;
+	struct nvme_payload payload;
+	int rc = 0;
+
+	if (!_is_io_flags_valid(io_flags)) {
+		return -EINVAL;
+	}
+
+	payload = NVME_PAYLOAD_CONTIG(buffer, metadata);
+
+	req = _nvme_ns_cmd_rw(ns, qpair, &payload, 0, 0, lba, lba_count, cb_fn, cb_arg, SPDK_NVME_OPC_WRITE,
+			      io_flags, apptag_mask, apptag, ((uint32_t)directive << 16), false, NULL, &rc);
+	if (req != NULL) {
+		return nvme_qpair_submit_request(qpair, req);
+	} else {
+		return nvme_ns_map_failure_rc(lba_count,
+					      ns->sectors_per_max_io,
+					      ns->sectors_per_stripe,
+					      qpair->ctrlr->opts.io_queue_requests,
+					      rc);
+	}
+}
+
 int
 spdk_nvme_ns_cmd_writev(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 			uint64_t lba, uint32_t lba_count,
@@ -1019,6 +1047,41 @@ spdk_nvme_ns_cmd_writev(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
 					      rc);
 	}
 }
+
+int
+spdk_nvme_ns_cmd_writev_with_md_with_directive(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,
+				uint64_t lba, uint32_t lba_count,
+				spdk_nvme_cmd_cb cb_fn, void *cb_arg, uint32_t io_flags,
+				spdk_nvme_req_reset_sgl_cb reset_sgl_fn,
+				spdk_nvme_req_next_sge_cb next_sge_fn, void *metadata,
+				uint16_t apptag_mask, uint16_t apptag, uint16_t directive) {
+	struct nvme_request *req;
+	struct nvme_payload payload;
+	int rc = 0;
+
+	if (!_is_io_flags_valid(io_flags)) {
+		return -EINVAL;
+	}
+
+	if (reset_sgl_fn == NULL || next_sge_fn == NULL) {
+		return -EINVAL;
+	}
+
+	payload = NVME_PAYLOAD_SGL(reset_sgl_fn, next_sge_fn, cb_arg, metadata);
+
+	req = _nvme_ns_cmd_rw(ns, qpair, &payload, 0, 0, lba, lba_count, cb_fn, cb_arg, SPDK_NVME_OPC_WRITE,
+			      io_flags, apptag_mask, apptag, ((uint32_t)directive << 16), true, NULL, &rc);
+	if (req != NULL) {
+		return nvme_qpair_submit_request(qpair, req);
+	} else {
+		return nvme_ns_map_failure_rc(lba_count,
+					      ns->sectors_per_max_io,
+					      ns->sectors_per_stripe,
+					      qpair->ctrlr->opts.io_queue_requests,
+					      rc);
+	}
+}
+
 
 int
 spdk_nvme_ns_cmd_writev_with_md(struct spdk_nvme_ns *ns, struct spdk_nvme_qpair *qpair,

@@ -1273,6 +1273,8 @@ spdk_nvme_transport_id_parse(struct spdk_nvme_transport_id *trid, const char *st
 			continue;
 		} else if (strcasecmp(key, "hostnqn") == 0) {
 			continue;
+		} else if (strcasecmp(key, "directive_id") == 0) {
+			trid->directive_id = spdk_strtol(val, 10);
 		} else if (strcasecmp(key, "ns") == 0) {
 			/*
 			 * Special case.  The namespace id parameter may
